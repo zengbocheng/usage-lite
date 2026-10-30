@@ -83,7 +83,7 @@ public sealed class TrayContext : ApplicationContext
     private readonly MainForm form = new();
     private readonly NotifyIcon tray;
     private readonly ContextMenuStrip menu = new();
-    private readonly System.Windows.Forms.Timer timer = new() { Interval = 30000 };
+    private readonly System.Windows.Forms.Timer timer = new() { Interval = 60000 };
     private readonly QuotaService service = new();
     private readonly AppSettings settings = AppSettings.Load();
     private DashboardData? data;
