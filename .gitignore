@@ -1,0 +1,12 @@
+bin/
+obj/
+release/
+artifacts/
+*.zip
+*.dmp
+*.log
+.vs/
+*.user
+*.suo
+.env
+.env.*
