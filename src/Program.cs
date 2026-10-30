@@ -12,6 +12,13 @@ internal static class Program
     {
         SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
         if (args.Contains("--self-test")) return SelfTests.Run(args);
+        if (args.Contains("--menu-smoke-test"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            return MenuSmokeTest.Run(args);
+        }
         if (args.Contains("--snapshot"))
         {
             var snapshot = new QuotaService().Read();
@@ -104,6 +111,7 @@ public sealed class TrayContext : ApplicationContext
         _ = form.Handle;
         tray = new NotifyIcon { Text = "Usage Lite · 正在读取本地额度", Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!), Visible = true, ContextMenuStrip = menu };
         menu.Font = new Font("Microsoft YaHei UI", 10, FontStyle.Regular);
+        TaskbarMenu.Attach(menu);
         menu.Items.Add("打开额度面板", null, (_, _) => form.ShowPanel());
         refreshItem = new("刷新本地记录", null, (_, _) => _ = RefreshAsync());
         menu.Items.Add(refreshItem);

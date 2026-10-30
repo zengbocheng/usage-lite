@@ -122,6 +122,22 @@ public static class SelfTests
             bool rejected = false; try { LocalFiles.Read(path, 64); } catch (InvalidDataException) { rejected = true; }
             Check(rejected, "oversized file accepted");
         });
+        Test("Tray popup fits work area for every taskbar edge and scale", () =>
+        {
+            foreach (var area in new[] { new Rectangle(0, 0, 1920, 1040), new Rectangle(0, 40, 1920, 1040), new Rectangle(60, 0, 1860, 1080), new Rectangle(0, 0, 1860, 1080), new Rectangle(-1920, 0, 1920, 1040) })
+            foreach (int gap in new[] { 4, 6, 7, 8 })
+            foreach (Point cursor in new[] { new Point(area.Right - 10, area.Bottom + 25), new Point(area.Left - 20, area.Top - 15) })
+            {
+                var size = new Size(240 * gap / 4, 260 * gap / 4);
+                var moved = new Rectangle(TaskbarMenu.Constrain(new Rectangle(cursor, size), area, gap), size);
+                Check(area.Contains(moved), "menu overlaps excluded taskbar area");
+            }
+        });
+        Test("Tray popup preserves an already safe location", () =>
+        {
+            var bounds = new Rectangle(200, 200, 250, 300);
+            Check(TaskbarMenu.Constrain(bounds, new Rectangle(0, 0, 1920, 1040), 7) == bounds.Location, "safe popup moved");
+        });
         File.WriteAllText(args[outputAt + 1], JsonSerializer.Serialize(new { passed = results.Count - failures, failed = failures, results }, new JsonSerializerOptions { WriteIndented = true }));
         return failures == 0 ? 0 : 1;
     }
