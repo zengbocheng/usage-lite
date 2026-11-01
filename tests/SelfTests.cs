@@ -138,6 +138,54 @@ public static class SelfTests
             var bounds = new Rectangle(200, 200, 250, 300);
             Check(TaskbarMenu.Constrain(bounds, new Rectangle(0, 0, 1920, 1040), 7) == bounds.Location, "safe popup moved");
         });
+        Test("Taskbar label reserves space beside visible weather at multiple DPI scales", () =>
+        {
+            foreach (double scale in new[] { 1d, 1.5, 1.75, 2 })
+            {
+                int S(int n) => (int)(n * scale);
+                var bar = new Rectangle(-S(1920), S(1040), S(1920), S(40));
+                var host = new Rectangle(bar.Left + S(150), bar.Top, S(1470), bar.Height);
+                var tray = new Rectangle(bar.Right - S(300), bar.Top, S(300), bar.Height);
+                var weather = new Rectangle(tray.Left - S(160), bar.Top, S(160), bar.Height);
+                var result = TaskbarLabelLayout.Place(bar, host, tray, [weather], new Size(S(100), S(24)), S(4));
+                Check(result is not null && bar.Contains(result.Label) && !result.Label.IntersectsWith(tray) && !result.Label.IntersectsWith(weather) && !result.Label.IntersectsWith(result.TaskList), "label overlaps shell content");
+                Check(result!.TaskList.Left == host.Left && result.TaskList.Width >= 160, "task list displaced or removed");
+            }
+        });
+        Test("Taskbar label fails closed on a crowded or vertical taskbar", () =>
+        {
+            Check(TaskbarLabelLayout.Place(new(0, 1040, 400, 40), new(150, 1040, 100, 40), new(250, 1040, 150, 40), [], new(120, 24), 4) is null, "crowded taskbar covered");
+            Check(TaskbarLabelLayout.Place(new(0, 0, 60, 1080), new(0, 150, 60, 600), new(0, 750, 60, 330), [], new(100, 24), 4) is null, "vertical taskbar covered");
+        });
+        Test("Taskbar visibility distinguishes auto-hide and fullscreen from maximized windows", () =>
+        {
+            var monitor = new Rectangle(0, 0, 1920, 1080);
+            Check(TaskbarLabelLayout.FullyVisible(new(0, 1040, 1920, 40), monitor), "visible taskbar hidden");
+            Check(!TaskbarLabelLayout.FullyVisible(new(0, 1078, 1920, 40), monitor), "auto-hidden taskbar shown");
+            Check(TaskbarLabelLayout.CoversMonitor(monitor, monitor) && !TaskbarLabelLayout.CoversMonitor(new(-8, -8, 1936, 1056), monitor), "maximized window mistaken for fullscreen");
+        });
+        Test("Taskbar label follows provider and preferred quota with expired fallback", () =>
+        {
+            var q = new QuotaSnapshot("Codex", new(8, now.AddHours(1), 300), new(29, now.AddDays(1), 10080), now, "test");
+            Check(TaskbarLabelLayout.Text(q, false, now) == "Codex: 92%" && TaskbarLabelLayout.Text(q, true, now) == "Codex: 71%", "wrong quota label");
+            Check(TaskbarLabelLayout.Text(q, false, now.AddHours(2)) == "Codex: 71%", "expired session not skipped");
+            Check(TaskbarLabelLayout.Text(QuotaSnapshot.Empty("Claude", "test"), false, now) == "Claude: —", "missing quota invented");
+        });
+        Test("Existing settings keep the label disabled until explicitly enabled", () =>
+        {
+            var settings = JsonSerializer.Deserialize<AppSettings>("{\"TrayProvider\":\"Claude\",\"Weekly\":true}")!;
+            Check(!settings.TaskbarLabelEnabled && settings.TrayProvider == "Claude" && settings.Weekly, "settings migration changed existing preferences");
+        });
+        Test("Transparent taskbar label has clickable alpha and visible regular text", () =>
+        {
+            using var font = new Font("Segoe UI", 10, FontStyle.Regular);
+            using var image = TaskbarQuotaLabel.Render("Codex: 71%", font, Color.White, new Size(160, 42));
+            Check(image.GetPixel(0, 0).A == 1, "background is opaque or not clickable");
+            bool text = false;
+            for (int y = 0; y < image.Height && !text; y++)
+            for (int x = 0; x < image.Width && !text; x++) text = image.GetPixel(x, y).A > 128;
+            Check(text, "quota text not rendered");
+        });
         File.WriteAllText(args[outputAt + 1], JsonSerializer.Serialize(new { passed = results.Count - failures, failed = failures, results }, new JsonSerializerOptions { WriteIndented = true }));
         return failures == 0 ? 0 : 1;
     }

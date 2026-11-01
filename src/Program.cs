@@ -11,7 +11,22 @@ internal static class Program
     private static int Main(string[] args)
     {
         SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
+        if (args.Contains("--taskbar-info"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            int index = Array.IndexOf(args, "--output");
+            if (index < 0 || index + 1 >= args.Length) return 2;
+            File.WriteAllText(args[index + 1], JsonSerializer.Serialize(TaskbarNative.Describe(), new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
         if (args.Contains("--self-test")) return SelfTests.Run(args);
+        if (args.Contains("--label-smoke-test"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            return TaskbarLabelSmokeTest.Run(args);
+        }
         if (args.Contains("--menu-smoke-test"))
         {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -57,7 +72,7 @@ internal static class Program
             };
             timer.Start(); Application.Run(form); return 0;
         }
-        AppLog.Write("start version=0.1.0 pid=" + Environment.ProcessId);
+        AppLog.Write("start version=" + Application.ProductVersion + " pid=" + Environment.ProcessId);
         try
         {
             using var context = new TrayContext(args.Contains("--show"));
@@ -101,6 +116,8 @@ public sealed class TrayContext : ApplicationContext
     private readonly ToolStripMenuItem sessionItem = new("优先显示 5 小时");
     private readonly ToolStripMenuItem weeklyItem = new("优先显示每周");
     private readonly ToolStripMenuItem refreshItem;
+    private readonly ToolStripMenuItem labelItem = new("任务栏显示额度标签");
+    private TaskbarQuotaLabel? taskbarLabel;
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyIcon(IntPtr icon);
@@ -122,13 +139,15 @@ public sealed class TrayContext : ApplicationContext
         var windows = new ToolStripMenuItem("托盘显示窗口");
         windows.DropDownItems.AddRange([sessionItem, weeklyItem]);
         menu.Items.Add(windows);
+        menu.Items.Add(labelItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Usage Lite 0.1.0 · 本地读取") { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem("Usage Lite " + Application.ProductVersion.Split('+')[0] + " · 本地读取") { Enabled = false });
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         codexItem.Click += (_, _) => Change(() => settings.TrayProvider = "Codex");
         claudeItem.Click += (_, _) => Change(() => settings.TrayProvider = "Claude");
         sessionItem.Click += (_, _) => Change(() => settings.Weekly = false);
         weeklyItem.Click += (_, _) => Change(() => settings.Weekly = true);
+        labelItem.Click += (_, _) => Change(() => settings.TaskbarLabelEnabled = !settings.TaskbarLabelEnabled);
         menu.Opening += (_, _) => UpdateChecks();
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (form.Visible) form.Hide(); else form.ShowPanel(); } };
         form.RefreshRequested += () => _ = RefreshAsync();
@@ -136,13 +155,14 @@ public sealed class TrayContext : ApplicationContext
         timer.Start();
         form.BeginInvoke(() => { if (show) form.ShowPanel(); _ = RefreshAsync(); });
         UpdateChecks();
+        UpdateLabel();
     }
     private void Change(Action mutation)
     {
         mutation();
         try { settings.Save(); }
         catch (Exception ex) when (LocalFiles.IsReadError(ex)) { AppLog.Write("settings save failed " + ex.GetType().Name); }
-        UpdateChecks(); UpdateTray();
+        UpdateChecks(); UpdateLabel(); UpdateTray();
     }
     private void UpdateChecks()
     {
@@ -150,6 +170,13 @@ public sealed class TrayContext : ApplicationContext
         claudeItem.Checked = !codexItem.Checked;
         weeklyItem.Checked = settings.Weekly;
         sessionItem.Checked = !settings.Weekly;
+        labelItem.Checked = settings.TaskbarLabelEnabled;
+    }
+    private void TogglePanel() { if (form.Visible) form.Hide(); else form.ShowPanel(); }
+    private void UpdateLabel()
+    {
+        if (closing || !settings.TaskbarLabelEnabled) { taskbarLabel?.Dispose(); taskbarLabel = null; return; }
+        taskbarLabel ??= new TaskbarQuotaLabel(TogglePanel, menu);
     }
     private async Task RefreshAsync()
     {
@@ -202,11 +229,13 @@ public sealed class TrayContext : ApplicationContext
         }
         string tooltip = Row(data.Codex) + "\n" + Row(data.Claude);
         tray.Text = tooltip.Length > 120 ? tooltip[..120] : tooltip;
+        taskbarLabel?.UpdateQuota(selected, settings.Weekly, now, tooltip);
     }
     protected override void ExitThreadCore()
     {
         if (closing) return;
         closing = true; timer.Stop(); tray.Visible = false;
+        taskbarLabel?.Dispose(); taskbarLabel = null;
         AppLog.Write("quit requested");
         form.Shutdown(); base.ExitThreadCore();
     }
@@ -215,6 +244,7 @@ public sealed class TrayContext : ApplicationContext
         if (disposing)
         {
             closing = true; timer.Dispose(); tray.Visible = false;
+            taskbarLabel?.Dispose(); taskbarLabel = null;
             var image = tray.Icon; tray.Dispose(); image?.Dispose(); menu.Dispose(); form.Dispose();
         }
         base.Dispose(disposing);
