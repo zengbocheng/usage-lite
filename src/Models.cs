@@ -89,7 +89,7 @@ public sealed class AppSettings
 {
     public string TrayProvider { get; set; } = "Codex";
     public bool Weekly { get; set; }
-    public bool TaskbarLabelEnabled { get; set; }
+    public bool TaskbarLabelEnabled { get; set; } = true;
     public static string DataDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UsageLite");
     public static AppSettings Load()
     {

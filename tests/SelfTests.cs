@@ -171,10 +171,11 @@ public static class SelfTests
             Check(TaskbarLabelLayout.Text(q, false, now.AddHours(2)) == "Codex: 71%", "expired session not skipped");
             Check(TaskbarLabelLayout.Text(QuotaSnapshot.Empty("Claude", "test"), false, now) == "Claude: —", "missing quota invented");
         });
-        Test("Existing settings keep the label disabled until explicitly enabled", () =>
+        Test("Taskbar label defaults on without overriding an explicit disabled preference", () =>
         {
             var settings = JsonSerializer.Deserialize<AppSettings>("{\"TrayProvider\":\"Claude\",\"Weekly\":true}")!;
-            Check(!settings.TaskbarLabelEnabled && settings.TrayProvider == "Claude" && settings.Weekly, "settings migration changed existing preferences");
+            Check(new AppSettings().TaskbarLabelEnabled && settings.TaskbarLabelEnabled && settings.TrayProvider == "Claude" && settings.Weekly, "default or existing provider preferences changed");
+            Check(!JsonSerializer.Deserialize<AppSettings>("{\"TaskbarLabelEnabled\":false}")!.TaskbarLabelEnabled, "explicit disabled preference overwritten");
         });
         Test("Transparent taskbar label has clickable alpha and visible regular text", () =>
         {
