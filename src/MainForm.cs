@@ -7,7 +7,7 @@ public sealed class MainForm : Form
     private readonly QuotaCard codex = new("Codex", Color.FromArgb(23, 107, 218));
     private readonly QuotaCard claude = new("Claude", Color.FromArgb(199, 108, 76));
     private readonly Label timestamp = new() { Dock = DockStyle.Fill, AutoSize = false, ForeColor = Color.FromArgb(99, 111, 130), TextAlign = ContentAlignment.MiddleLeft };
-    private readonly Button refresh = new() { Text = "刷新本地记录", AutoSize = false, Dock = DockStyle.Fill, MinimumSize = new Size(174, 0), FlatStyle = FlatStyle.Flat, Padding = new Padding(8, 4, 8, 4), Margin = new Padding(5, 4, 0, 4) };
+    private readonly RoundedButton refresh = new() { Text = "刷新本地记录", AutoSize = false, Dock = DockStyle.Fill, MinimumSize = new Size(174, 0), Padding = new Padding(8, 4, 8, 4), Margin = new Padding(5, 4, 0, 4) };
     private readonly Label hint = new() { AutoSize = true, MaximumSize = new Size(402, 0), ForeColor = Color.FromArgb(99, 111, 130), Text = "额度随 Claude / Codex 的本地记录更新。刷新只重新读取缓存。", Margin = new Padding(0, 8, 0, 0) };
     private bool reallyClosing;
     public event Action? RefreshRequested;
@@ -21,21 +21,47 @@ public sealed class MainForm : Form
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         BackColor = Color.FromArgb(245, 247, 251);
-        FormBorderStyle = FormBorderStyle.FixedSingle;
+        FormBorderStyle = FormBorderStyle.None;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(20, 14, 20, 16), BackColor = BackColor };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(20, 14, 20, 16), BackColor = Color.FromArgb(245, 247, 251) };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 180));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 180));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var heading = new Label { Text = "Usage Lite", Dock = DockStyle.Fill, Font = new Font(Font.FontFamily, 18f, FontStyle.Bold), ForeColor = Color.FromArgb(30, 41, 59), TextAlign = ContentAlignment.TopLeft };
-        layout.Controls.Add(heading, 0, 0);
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 32));
+        var heading = new Label { Text = "Usage Lite", Dock = DockStyle.Fill, Margin = Padding.Empty, Font = new Font(Font.FontFamily, 18f, FontStyle.Bold), ForeColor = Color.FromArgb(30, 41, 59), TextAlign = ContentAlignment.MiddleLeft };
+        var close = new Button { Text = "×", AccessibleName = "关闭面板", Dock = DockStyle.Fill, Margin = new Padding(0, 7, 0, 7), FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 13f), ForeColor = Color.FromArgb(99, 111, 130), Cursor = Cursors.Hand };
+        close.FlatAppearance.BorderSize = 0;
+        close.FlatAppearance.MouseOverBackColor = Color.FromArgb(229, 234, 242);
+        close.FlatAppearance.MouseDownBackColor = Color.FromArgb(216, 224, 236);
+        close.Click += (_, _) => Close();
+        void DragHeader(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left || sender is not Control source) return;
+            Point point = source.PointToScreen(e.Location);
+            // Include the top/side padding around the heading, but not the cards.
+            if (PointToClient(point).Y >= PointToClient(codex.PointToScreen(Point.Empty)).Y) return;
+            // Hand dragging to the standard Windows caption move loop.
+            source.Capture = false;
+            var message = Message.Create(Handle, 0x00A1, (IntPtr)2,
+                (IntPtr)((point.X & 0xffff) | ((point.Y & 0xffff) << 16)));
+            DefWndProc(ref message);
+        }
+        heading.MouseDown += DragHeader;
+        header.MouseDown += DragHeader;
+        layout.MouseDown += DragHeader;
+        MouseDown += DragHeader;
+        header.Controls.Add(heading, 0, 0);
+        header.Controls.Add(close, 1, 0);
+        layout.Controls.Add(header, 0, 0);
         layout.Controls.Add(codex, 0, 1);
         layout.Controls.Add(claude, 0, 2);
         var footer = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 1, ColumnCount = 2, Margin = Padding.Empty };
@@ -67,6 +93,27 @@ public sealed class MainForm : Form
         Show(); Activate();
     }
     public void Shutdown() { reallyClosing = true; Close(); }
+
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e);
+        UpdateRoundedRegion();
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        UpdateRoundedRegion();
+    }
+
+    private void UpdateRoundedRegion()
+    {
+        if (Width <= 0 || Height <= 0) return;
+        using var path = RoundedShapes.Create(new RectangleF(0, 0, Width, Height), 16 * DeviceDpi / 96f);
+        var previous = Region;
+        Region = new Region(path);
+        previous?.Dispose();
+    }
 }
 
 public sealed class QuotaCard : Control
