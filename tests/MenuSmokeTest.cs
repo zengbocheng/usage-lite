@@ -28,8 +28,9 @@ public static class MenuSmokeTest
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("托盘额度来源", null, new ToolStripMenuItem("Codex"), new ToolStripMenuItem("Claude")));
             menu.Items.Add(new ToolStripMenuItem("托盘显示窗口", null, new ToolStripMenuItem("优先显示 5 小时"), new ToolStripMenuItem("优先显示每周")));
+            menu.Items.Add("任务栏显示额度标签");
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Usage Lite 0.1.0 · 本地读取") { Enabled = false }); menu.Items.Add("退出");
+            menu.Items.Add(new ToolStripMenuItem("Usage Lite " + Application.ProductVersion.Split('+')[0] + " · 本地读取") { Enabled = false }); menu.Items.Add("退出");
             if (fix) TaskbarMenu.Attach(menu);
             presenter.Invoke(menu, [point.X, point.Y]);
             menu.BeginInvoke(() =>
