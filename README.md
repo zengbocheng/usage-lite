@@ -41,6 +41,8 @@ SQLite 通过 Microsoft.Data.Sqlite 与 SQLitePCLRaw 的 Windows 系统 SQLite p
 
 测试使用独立临时目录与合成缓存，覆盖窗口分类、SQLite 只读、缓存解压、组织切换、错误/过期数据及文件共享；不会向真实 Claude / Codex 数据写入测试文件。结果保存在 `artifacts\test-results.json`。
 
+面板布局回归测试：`release\UsageLite.exe --panel-smoke-test --output artifacts\panel-layout\results.json`。使用合成额度，检查窗口放大、隐藏后切换 DPI（100%–225%）及重新打开时的卡片比例，生成预览图；不会改动系统缩放或当前托盘实例。
+
 可生成本机额度快照用于本地诊断：
 
 ```powershell
