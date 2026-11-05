@@ -71,6 +71,25 @@ public sealed class MainForm : Form
         footer.Controls.Add(refresh, 1, 0);
         layout.Controls.Add(footer, 0, 3);
         layout.Controls.Add(hint, 0, 4);
+        // Windows can resize a borderless window without changing its DPI. The
+        // owner-drawn cards scale with width, so their rows must do the same.
+        bool sizingCards = false;
+        layout.Layout += (_, _) =>
+        {
+            if (sizingCards) return;
+            int cardWidth = layout.ClientSize.Width - layout.Padding.Horizontal;
+            if (cardWidth <= 0) return;
+            int cardHeight = (int)Math.Ceiling(cardWidth * 168d / 400);
+            sizingCards = true;
+            try
+            {
+                int codexHeight = cardHeight + codex.Margin.Vertical;
+                int claudeHeight = cardHeight + claude.Margin.Vertical;
+                if (layout.RowStyles[1].Height != codexHeight) layout.RowStyles[1].Height = codexHeight;
+                if (layout.RowStyles[2].Height != claudeHeight) layout.RowStyles[2].Height = claudeHeight;
+            }
+            finally { sizingCards = false; }
+        };
         Controls.Add(layout);
         ResumeLayout(true);
         refresh.Click += (_, _) => RefreshRequested?.Invoke();
@@ -88,6 +107,9 @@ public sealed class MainForm : Form
     public void SetBusy(bool busy) { refresh.Enabled = !busy; refresh.Text = busy ? "正在读取…" : "刷新本地记录"; }
     public void ShowPanel()
     {
+        // Recover the intended size after Windows snapping/display changes.
+        WindowState = FormWindowState.Normal;
+        ClientSize = LogicalToDeviceUnits(new Size(440, 522));
         var area = Screen.FromPoint(Cursor.Position).WorkingArea;
         Location = new Point(Math.Max(area.Left, area.Right - Width - 12), Math.Max(area.Top, area.Bottom - Height - 12));
         Show(); Activate();

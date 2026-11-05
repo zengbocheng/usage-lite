@@ -20,6 +20,13 @@ internal static class Program
             return 0;
         }
         if (args.Contains("--self-test")) return SelfTests.Run(args);
+        if (args.Contains("--panel-smoke-test"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            return PanelSmokeTest.Run(args);
+        }
         if (args.Contains("--label-smoke-test"))
         {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
