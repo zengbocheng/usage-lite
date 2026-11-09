@@ -38,6 +38,70 @@ public static class SelfTests
         Test("Invalid percentages never become 100% remaining", () => { foreach (string invalid in new[] { "true", "-1", "101", "null", "\"26\"" }) Check(Parse("{\"primary\":{\"used_percent\":" + invalid + "}}") is null, invalid); });
         Test("Future quota observation rejected", () => Check(Parse("{\"primary\":{\"used_percent\":25}}", now.AddMinutes(2)) is null, "future accepted"));
         Test("Expired quota becomes unknown without inventing availability", () => { var q = Parse("{\"primary\":{\"used_percent\":100,\"resets_at\":1999999999}}"); Check(q?.Preferred(false, now) is null, "expired quota shown as current"); });
+        Test("Codex response records deduplicate and roll up by local day and project", () =>
+        {
+            string root = Case("token-responses");
+            string active = Path.Combine(root, "sessions");
+            string archive = Path.Combine(root, "archived_sessions");
+            Directory.CreateDirectory(active);
+            Directory.CreateDirectory(archive);
+            string Row(string at, string type, object payload) => JsonSerializer.Serialize(new { timestamp = at, type, payload }) + "\n";
+            string Response(string at, string id, int count) => Row(at, "token_usage_record",
+                new { response_id = id, usage = new { total_tokens = count, cached_input_tokens = 2 } });
+            string log = Row("2026-11-01T01:00:00Z", "session_meta", new { id = "a", cwd = @"\\?\D:\Alpha" }) +
+                Response("2026-11-02T06:59:59Z", "one", 10) +
+                Response("2026-11-02T07:00:00Z", "two", 20) +
+                Row("2026-11-02T07:00:01Z", "token_usage_record",
+                    new { thread_id = "parent", response_id = "inherited", usage = new { total_tokens = 999 } }) +
+                Row("2026-11-02T07:01:00Z", "turn_context", new { cwd = @"D:\Beta" }) +
+                Response("2026-11-02T07:02:00Z", "two", 20) +
+                Response("2026-11-02T07:03:00Z", "three", 7);
+            string activeFile = Path.Combine(active, "current.jsonl");
+            File.WriteAllText(activeFile, log);
+            File.WriteAllText(Path.Combine(archive, "copy.jsonl"), log);
+            File.WriteAllText(Path.Combine(active, "no-project.jsonl"), Response("2026-11-02T07:05:00Z", "four", 3));
+            var reader = new CodexTokenReader(root);
+            var zone = TimeZoneInfo.CreateCustomTimeZone("Test -07", TimeSpan.FromHours(-7), "Test", "Test");
+            var readAt = DateTimeOffset.Parse("2026-11-02T09:00:00Z");
+            var monday = new DateOnly(2026, 11, 2);
+            var usage = reader.Read(readAt, zone);
+            Check(usage.Today == monday && TokenUsage.WeekStart(usage.Today) == monday &&
+                TokenUsage.WeekStart(monday.AddDays(-1)) == monday.AddDays(-7), "natural week boundary");
+            Check(usage.Total(monday.AddDays(-1)) == 10 && usage.Total(monday) == 30, "day grouping or duplicate response");
+            Check(usage.Projects(monday, 7).Select(p => (p.Name, p.Tokens)).SequenceEqual(new[] { ("Alpha", 20L), ("Beta", 7L), ("未归类", 3L) }), "project attribution or weekly reconciliation");
+
+            string appended = Response("2026-11-02T07:06:00Z", "five", 9);
+            File.AppendAllText(activeFile, appended[..^1]);
+            Check(reader.Read(readAt, zone).Total(monday) == 30, "incomplete line counted");
+            File.AppendAllText(activeFile, "\n");
+            Check(reader.Read(readAt, zone).Total(monday) == 39 &&
+                reader.Read(readAt, zone).Total(monday) == 39, "incremental refresh missed or repeated response");
+        });
+        Test("Codex legacy snapshots count fresh increments and skip replay and context estimates", () =>
+        {
+            string root = Case("token-legacy");
+            string sessions = Path.Combine(root, "sessions");
+            Directory.CreateDirectory(sessions);
+            string Snapshot(int second, int total, int last, int input) => JsonSerializer.Serialize(new
+            {
+                timestamp = $"2026-11-02T07:00:{second:00}Z", type = "event_msg",
+                payload = new
+                {
+                    type = "token_count", info = new
+                    {
+                        total_token_usage = new { total_tokens = total },
+                        last_token_usage = new { total_tokens = last, input_tokens = input }
+                    }
+                }
+            });
+            File.WriteAllLines(Path.Combine(sessions, "legacy.jsonl"), new[]
+            {
+                Snapshot(0, 1000, 10, 8), Snapshot(1, 1000, 10, 8), Snapshot(2, 1020, 20, 18),
+                Snapshot(3, 1020, 950, 0), Snapshot(4, 6, 6, 4), Snapshot(5, 13, 7, 4)
+            });
+            var result = new CodexTokenReader(root).Read(DateTimeOffset.Parse("2026-11-02T08:00:00Z"), TimeZoneInfo.Utc);
+            Check(result.Total(result.Today) == 43, "legacy replay, estimate or reset was miscounted");
+        });
         Test("Missing local directories return empty snapshots", () => { var p = Case("missing"); Check(new CodexReader(p).Read(now).Session is null, "Codex missing"); Check(new ClaudeReader(p, p, p).Read(now).Weekly is null, "Claude missing"); });
         Test("JSONL incomplete tail retains preceding valid quota", () =>
         {
@@ -76,6 +140,23 @@ public static class SelfTests
             string profileParent = Path.Combine(p, "Packages", "Claude_test", "LocalCache", "Roaming");
             CreateProfile(profileParent, "[" + Sample(2000000000, "org-a", "{\"fh\":8,\"sd\":0}") + "]");
             Check(new ClaudeReader(roaming, p, p).Read(now).Session?.Remaining == 92, "Store path not found");
+        });
+        Test("Claude relocated desktop data is discovered and supersedes older profiles", () =>
+        {
+            string root = Case("relocated-desktop");
+            string roaming = Path.Combine(root, "roaming");
+            string local = Path.Combine(root, "local");
+            CreateProfile(roaming, "[" + Sample(1999999940, "org-a", "{\"fh\":70,\"sd\":80}") + "]");
+            string profile = Path.Combine(local, "Claude-Data", "claude_test");
+            Directory.CreateDirectory(profile);
+            string history = Path.Combine(profile, "plan-usage-history.json");
+            string contents = "{\"version\":2,\"samples\":[" + Sample(2000000000, "org-a", "{\"fh\":12,\"sd\":34}") + "]}";
+            File.WriteAllText(history, contents);
+            var reader = new ClaudeReader(roaming, local, root);
+            var quota = reader.Read(now);
+            Check(quota.Session?.Remaining == 88 && quota.Weekly?.Remaining == 66, "relocated profile missed");
+            File.WriteAllText(history, "{\"version\":2,\"samples\":[" + Sample(2000000001, "org-a", "{\"fh\":13,\"sd\":35}") + "]}");
+            Check(reader.Read(now.AddSeconds(1)).Session?.Remaining == 87, "refresh did not re-read the relocated profile");
         });
         Test("Claude malformed history is read-only", () =>
         {

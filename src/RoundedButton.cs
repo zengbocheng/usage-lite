@@ -20,6 +20,8 @@ internal static class RoundedShapes
 public sealed class RoundedButton : Button
 {
     private bool hovered, pressed;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Highlighted { get; set; }
 
     public RoundedButton()
     {
@@ -36,10 +38,10 @@ public sealed class RoundedButton : Button
         e.Graphics.Clear(Parent?.BackColor ?? BackColor);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         Color fill = !Enabled ? Color.FromArgb(235, 239, 245) : pressed ? Color.FromArgb(205, 224, 249) :
-            hovered ? Color.FromArgb(220, 234, 253) : Color.FromArgb(231, 240, 253);
+            hovered || Highlighted ? Color.FromArgb(220, 234, 253) : Color.FromArgb(231, 240, 253);
         using var path = RoundedShapes.Create(new RectangleF(0.5f, 0.5f, Width - 1, Height - 1), 10 * DeviceDpi / 96f);
         using var brush = new SolidBrush(fill);
-        using var pen = new Pen(Color.FromArgb(205, 222, 245));
+        using var pen = new Pen(Highlighted ? Color.FromArgb(23, 107, 218) : Color.FromArgb(205, 222, 245));
         e.Graphics.FillPath(brush, path);
         e.Graphics.DrawPath(pen, path);
         var textBounds = Rectangle.Inflate(ClientRectangle, -6, -2);

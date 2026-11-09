@@ -1,6 +1,6 @@
 # Usage Lite
 
-Windows 自用额度查看器。首版只保留 Codex / Claude 额度、托盘菜单和原生面板。
+Windows 自用额度查看器，提供 Codex / Claude 额度、Codex Token 统计、托盘菜单和原生面板。
 
 ## 使用
 
@@ -11,6 +11,8 @@ Windows 自用额度查看器。首版只保留 Codex / Claude 额度、托盘�
 - 默认开启任务栏额度标签，显示透明的 `Codex: 71%` 文字，10pt 常规字体；与托盘共用额度来源和窗口设置。左键打开/隐藏面板，右键打开同一菜单。取消勾选“任务栏显示额度标签”可关闭，重启后保留手动选择。
 - 标签目前适配 Windows 10 的横向原生任务栏，会临时收窄应用图标区域来预留空间并避开天气组件；关闭标签或正常退出时恢复。全屏和自动隐藏时隐藏标签，Explorer 恢复后自动重新定位。竖向、空间不足或不支持的任务栏仅显示托盘图标。
 - 每 1 分钟重新读取本地记录；“刷新本地记录”不会向服务端请求额度。
+- Codex 卡片底部的“今日已用”链接显示当天 Token。点击后按自然周（周一到周日）查看每日柱状图，可切换历史周；选择日期查看当天的项目排行，点击周合计查看整周排行。数字统一以万、亿显示。
+- 日期使用 Windows 本地时区。Token 统计覆盖本机留存的 Codex 会话，包含归档会话；按请求去重，兼容旧日志的累计增量。项目按会话工作目录归类，缺少目录的记录归入“未归类”，悬停项目可查看完整目录。
 - 面板采用无边框圆角窗口和圆角刷新按钮，拖动顶部标题可移动；右上角关闭按钮或 Esc 仅隐藏面板，完全退出请用托盘菜单“退出”。
 - 未知或已经到重置时间的额度显示 `—`。不推算重置时间，不把缺失数据当作 100%。
 - Claude Desktop 缓存超过两小时不作为当前额度；在 Claude 桌面端查看用量后可更新本地缓存。
@@ -18,7 +20,7 @@ Windows 自用额度查看器。首版只保留 Codex / Claude 额度、托盘�
 ## 数据与设置
 
 - Codex：`CODEX_HOME` 或 `%USERPROFILE%\.codex` 下的 `sessions`、`archived_sessions` 和 `logs_2.sqlite`，数据库以只读方式连接。
-- Claude Desktop：普通安装版和 Microsoft Store 版的 `plan-usage-history.json`、同一组织的本地 Chromium HTTP 缓存。
+- Claude Desktop：普通安装版、Microsoft Store 版以及 `%LOCALAPPDATA%\Claude-Data\claude*\` 新目录下的 `plan-usage-history.json`、同一组织的本地 Chromium HTTP 缓存。
 - 已存在的 Claude Code `usage-status.json` 可作兼容数据源。不安装或修改 hooks。
 - 不读取登录凭据、不解密 Cookie、不发网络请求。只写自己的 `%LOCALAPPDATA%\UsageLite\settings.json` 和轮转日志 `app.log`。
 - 源码、构建产物与原 usage 独立。没有开机启动设置，没有自动升级，没有后台观察任务。
@@ -39,9 +41,9 @@ SQLite 通过 Microsoft.Data.Sqlite 与 SQLitePCLRaw 的 Windows 系统 SQLite p
 
 `build.ps1` 会优先使用 PATH 中的 dotnet；本项目所在工作区还可使用 `..\build\usage-lite-tools\dotnet\dotnet.exe`。
 
-测试使用独立临时目录与合成缓存，覆盖窗口分类、SQLite 只读、缓存解压、组织切换、错误/过期数据及文件共享；不会向真实 Claude / Codex 数据写入测试文件。结果保存在 `artifacts\test-results.json`。
+测试使用独立临时目录与合成缓存，覆盖额度窗口分类、SQLite 只读、缓存解压、组织切换、Claude 数据迁移、错误/过期数据及文件共享，以及 Token 去重、跨日/跨周归类和日志增量读取。结果保存在 `artifacts\test-results.json`。
 
-面板布局回归测试：`release\UsageLite.exe --panel-smoke-test --output artifacts\panel-layout\results.json`。使用合成额度，检查窗口放大、隐藏后切换 DPI（100%–225%）及重新打开时的卡片比例，生成预览图；不会改动系统缩放或当前托盘实例。
+面板布局回归测试：`release\UsageLite.exe --panel-smoke-test --output artifacts\panel-layout\results.json`。使用合成额度和 Token 记录，检查窗口放大、隐藏后切换 DPI（100%–225%）、卡片链接及周统计导航，生成预览图。
 
 可生成本机额度快照用于本地诊断：
 

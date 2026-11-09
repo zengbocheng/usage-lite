@@ -50,6 +50,13 @@ internal static class Program
             File.WriteAllText(args[index + 1], json);
             return 0;
         }
+        if (args.Contains("--preview"))
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            return RunPreview();
+        }
         AppDomain.CurrentDomain.UnhandledException += (_, e) => AppLog.Write("fatal " + (e.ExceptionObject as Exception)?.GetType().Name);
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         using var singleInstance = new Mutex(true, @"Local\UsageLite.Tray.v1", out bool first);
@@ -89,12 +96,54 @@ internal static class Program
         }
         finally { singleInstance.ReleaseMutex(); }
     }
+
+    private static int RunPreview()
+    {
+        using var form = new MainForm(hideOnClose: false) { Text = "Usage Lite（预览）" };
+        var service = new QuotaService();
+        bool busy = false;
+        async void Refresh()
+        {
+            if (busy) return;
+            busy = true;
+            form.SetBusy(true);
+            try
+            {
+                var quotas = await Task.Run(service.Read);
+                if (form.IsDisposed) return;
+                form.UpdateData(quotas);
+                var tokens = await Task.Run(service.ReadTokens);
+                if (!form.IsDisposed) form.UpdateTokens(tokens);
+            }
+            finally
+            {
+                busy = false;
+                if (!form.IsDisposed) form.SetBusy(false);
+            }
+        }
+        form.RefreshRequested += Refresh;
+        form.Shown += (_, _) => Refresh();
+        form.ShowPanel();
+        Application.Run(form);
+        return 0;
+    }
 }
 
 public sealed class QuotaService
 {
     private readonly CodexReader codex = new();
     private readonly ClaudeReader claude = new();
+    private readonly CodexTokenReader tokens = new();
+
+    public TokenUsage ReadTokens()
+    {
+        try { return tokens.Read(DateTimeOffset.UtcNow); }
+        catch (Exception ex) when (LocalFiles.IsReadError(ex))
+        {
+            AppLog.Write("codex token read failed: " + ex.GetType().Name);
+            return new(DateOnly.FromDateTime(DateTime.Today), [], partial: true);
+        }
+    }
     public DashboardData Read()
     {
         var now = DateTimeOffset.UtcNow;
@@ -194,6 +243,8 @@ public sealed class TrayContext : ApplicationContext
             var next = await Task.Run(service.Read);
             if (closing) return;
             data = next; form.UpdateData(next); UpdateTray();
+            var tokens = await Task.Run(service.ReadTokens);
+            if (!closing) form.UpdateTokens(tokens);
         }
         catch (Exception ex) { AppLog.Write("refresh failed " + ex.GetType().Name); }
         finally
