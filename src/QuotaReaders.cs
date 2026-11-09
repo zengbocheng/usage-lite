@@ -7,7 +7,8 @@ public sealed class CodexReader
 {
     private readonly string home;
     private readonly Dictionary<string, (long Size, DateTime Modified, QuotaSnapshot? Data)> cache = new();
-    public CodexReader(string? root = null) => home = root ?? Environment.GetEnvironmentVariable("CODEX_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
+    internal static string DefaultHome => Environment.GetEnvironmentVariable("CODEX_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
+    public CodexReader(string? root = null) => home = root ?? DefaultHome;
 
     public QuotaSnapshot Read(DateTimeOffset now)
     {
@@ -156,6 +157,13 @@ public sealed class ClaudeReader
         {
             string packages = Path.Combine(local, "Packages");
             if (Directory.Exists(packages)) profiles.AddRange(Directory.EnumerateDirectories(packages, "Claude_*").Select(p => Path.Combine(p, "LocalCache", "Roaming", "Claude")));
+        }
+        catch (Exception ex) when (LocalFiles.IsReadError(ex)) { }
+        try
+        {
+            string desktopData = Path.Combine(local, "Claude-Data");
+            if (Directory.Exists(desktopData))
+                profiles.AddRange(Directory.EnumerateDirectories(desktopData, "claude*"));
         }
         catch (Exception ex) when (LocalFiles.IsReadError(ex)) { }
         var observations = new List<QuotaSnapshot>();
