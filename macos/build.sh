@@ -25,7 +25,7 @@ mkdir -p "$contents/Resources/licenses"
 cp -R licenses/. "$contents/Resources/licenses/"
 
 dotnet publish macos/Reader/UsageLite.Reader.csproj -c Release -r "$rid" --self-contained true -o "$reader" -p:Version="$version"
-xcrun swiftc -swift-version 5 -parse-as-library -O -target "$arch-apple-macosx14.0" \
+xcrun swiftc -swift-version 5 -parse-as-library -O -target "$arch-apple-macosx15.0" \
     macos/Sources/*.swift -o "$contents/MacOS/UsageLite"
 
 # Ad-hoc signing makes the preview bundle internally consistent on both architectures.

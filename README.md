@@ -2,7 +2,7 @@
 
 Windows 自用额度查看器，提供 Codex / Claude 额度、两者的本地 Token 统计、托盘菜单和原生面板。
 
-macOS 菜单栏试用版支持 Codex 和 Claude 的本地额度、双窗口百分比和手动刷新。支持 macOS 14 或更新版本。GitHub Actions 的「macOS Preview」构建提供 Apple Silicon 和 Intel 安装包以及界面预览。安装包为临时签名的试用构建。Token 统计目前在 Windows 版提供。
+macOS 菜单栏试用版支持 Codex 和 Claude 的本地额度、双窗口百分比和手动刷新。支持 macOS 15 或更新版本。GitHub Actions 的「macOS Preview」构建提供 Apple Silicon 和 Intel 安装包以及界面预览。安装包为临时签名的试用构建。Token 统计目前在 Windows 版提供。
 
 在 Mac 上可使用 Xcode 命令行工具和 .NET 10 SDK 运行 `bash macos/build.sh`，再运行 `bash macos/test-preview.sh artifacts/macos` 验证构建。
 
