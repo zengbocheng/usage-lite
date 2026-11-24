@@ -9,16 +9,20 @@ public sealed class MainForm : Form
     private const int TokenDetailHeight = 522;
     private readonly QuotaCard codex = new("Codex", Color.FromArgb(23, 107, 218));
     private readonly QuotaCard claude = new("Claude Code", Color.FromArgb(199, 108, 76));
-    private readonly ClearTypeLinkLabel tokenSummary = new()
+    private static ClearTypeLinkLabel CreateTokenSummary() => new()
     {
         BackColor = Color.White, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(106, 119, 137),
         Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular),
         LinkBehavior = LinkBehavior.AlwaysUnderline, LinkColor = Color.FromArgb(31, 96, 182),
         ActiveLinkColor = Color.FromArgb(20, 66, 135), TabStop = true, UseMnemonic = false, AutoEllipsis = true
     };
+    private readonly ClearTypeLinkLabel tokenSummary = CreateTokenSummary();
+    private readonly ClearTypeLinkLabel claudeTokenSummary = CreateTokenSummary();
     private readonly TokenUsageView tokenView = new() { Visible = false };
     private readonly TableLayoutPanel layout;
     private TokenUsage? tokens;
+    private TokenUsage? claudeTokens;
+    private bool showingClaudeTokens;
     private readonly RoundedButton refresh = new() { Text = "刷新本地记录", AutoSize = false, Dock = DockStyle.Fill, MinimumSize = new Size(116, 0), Padding = new Padding(8, 4, 8, 4), Margin = new Padding(0, 4, 0, 4) };
     private bool reallyClosing;
     public event Action? RefreshRequested;
@@ -87,6 +91,7 @@ public sealed class MainForm : Form
         footer.Controls.Add(refresh, 0, 0);
         footer.Controls.Add(hint, 1, 0);
         codex.SetSourceLine(tokenSummary);
+        claude.SetSourceLine(claudeTokenSummary);
         UpdateTokenSummary();
         layout.Controls.Add(footer, 0, 3);
         // Windows can resize a borderless window without changing its DPI. The
@@ -109,7 +114,8 @@ public sealed class MainForm : Form
         };
         Controls.Add(layout);
         Controls.Add(tokenView);
-        tokenSummary.LinkClicked += (_, _) => OpenTokens();
+        tokenSummary.LinkClicked += (_, _) => OpenTokens(false);
+        claudeTokenSummary.LinkClicked += (_, _) => OpenTokens(true);
         tokenView.BackRequested += ShowQuotas;
         tokenView.CloseRequested += Close;
         ResumeLayout(true);
@@ -135,26 +141,41 @@ public sealed class MainForm : Form
     {
         tokens = usage;
         UpdateTokenSummary();
-        if (tokenView.Visible) tokenView.UpdateUsage(usage);
+        if (tokenView.Visible && !showingClaudeTokens) tokenView.UpdateUsage(usage);
+    }
+
+    public void UpdateClaudeTokens(TokenUsage usage)
+    {
+        claudeTokens = usage;
+        UpdateTokenSummary();
+        if (tokenView.Visible && showingClaudeTokens) tokenView.UpdateUsage(usage);
     }
 
     private void UpdateTokenSummary()
     {
-        string prefix = codex.SourceText + "    ";
+        SetSummary(tokenSummary, codex, tokens);
+        SetSummary(claudeTokenSummary, claude, claudeTokens);
+    }
+
+    private static void SetSummary(LinkLabel summary, QuotaCard card, TokenUsage? snapshot)
+    {
+        string prefix = card.SourceText + "    ";
         string caption = "今日 Token · 读取中…";
-        if (tokens is { } usage)
+        if (snapshot is { } usage)
         {
             long today = usage.Total(usage.Today);
             caption = $"今日已用 {TokenUsageView.Compact(today)} Token{(usage.Partial ? " *" : "")}";
-            tokenSummary.AccessibleDescription = $"今日 {today:N0} Token。打开每日和项目用量。";
+            summary.AccessibleDescription = $"今日 {today:N0} Token。打开每日和项目用量。";
         }
-        tokenSummary.Text = prefix + caption;
-        tokenSummary.LinkArea = new LinkArea(prefix.Length, caption.Length);
+        summary.Text = prefix + caption;
+        summary.LinkArea = new LinkArea(prefix.Length, caption.Length);
     }
 
-    private void OpenTokens()
+    private void OpenTokens(bool isClaude)
     {
-        tokenView.Open(tokens, tokens?.Today ?? DateOnly.FromDateTime(DateTime.Today));
+        showingClaudeTokens = isClaude;
+        var snapshot = isClaude ? claudeTokens : tokens;
+        tokenView.Open(snapshot, snapshot?.Today ?? DateOnly.FromDateTime(DateTime.Today), isClaude ? "Claude Code" : "Codex");
         layout.Hide();
         SetPanelHeight(TokenDetailHeight);
         tokenView.Show();

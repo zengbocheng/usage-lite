@@ -20,8 +20,9 @@ internal static class TaskbarLabelSmokeTest
         TaskbarMenu.Attach(menu);
         using var label = new TaskbarQuotaLabel(() => { }, menu);
         using var context = new ApplicationContext();
-        var quota = new CodexReader().Read(DateTimeOffset.UtcNow);
-        label.UpdateQuota(quota, false, DateTimeOffset.UtcNow, "Usage Lite label verification");
+        var now = DateTimeOffset.UtcNow;
+        var quota = new QuotaSnapshot("Claude", new(10, now.AddHours(1), 300), new(95, now.AddDays(1), 10080), now, "test");
+        label.UpdateQuota(quota, now, "5 小时 90% / 每周 5%");
         using var timer = new System.Windows.Forms.Timer { Interval = 1000 };
         bool shown = false, reserved = false, clear = false;
         Rectangle? labelBounds = null, during = null;
@@ -49,7 +50,7 @@ internal static class TaskbarLabelSmokeTest
             {
                 restored = before is not null && TaskbarNative.Bounds(host) == before;
                 using var immediate = new TaskbarQuotaLabel(() => { }, menu);
-                immediate.UpdateQuota(quota, false, DateTimeOffset.UtcNow, "Immediate disable verification");
+                immediate.UpdateQuota(quota, DateTimeOffset.UtcNow, "Immediate disable verification");
                 // Dispose before Explorer's asynchronous resize necessarily completes.
             }
             if (ticks < 4) return;
