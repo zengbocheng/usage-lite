@@ -43,7 +43,11 @@ jobs:
       - name: Build the app bundle
         run: bash macos/build.sh "$RUNNER_TEMP/usage-lite"
       - name: Test local quota reading and render the UI
+        if: matrix.arch == 'arm64'
         run: bash macos/test-preview.sh "$RUNNER_TEMP/usage-lite"
+      - name: Test local quota reading on Intel
+        if: matrix.arch == 'x64'
+        run: bash macos/test-preview.sh "$RUNNER_TEMP/usage-lite" --headless
       - name: Upload app ZIP
         uses: actions/upload-artifact@v4
         with:

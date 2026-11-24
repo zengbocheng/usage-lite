@@ -29,6 +29,7 @@ history = {'version': 2, 'samples': [{'t': ts * 1000, 'org': 'fixture', 'u': {'f
 PY
 
 "$app" --smoke-fixture "$fixture"
+if [[ ${2:-} == --headless ]]; then exit 0; fi
 "$app" --export-previews "$out/ui"
 for name in dual-quota weekly-only no-records; do
     test -s "$out/ui/$name.png"

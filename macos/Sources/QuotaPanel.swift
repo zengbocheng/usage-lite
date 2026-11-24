@@ -14,12 +14,17 @@ struct QuotaPanel: View {
             HStack {
                 Text("Usage Lite").font(.title2.weight(.semibold))
                 Spacer()
-                Picker("菜单栏显示", selection: $provider) {
-                    ForEach(Provider.allCases) { Text($0.rawValue).tag($0) }
+                HStack(spacing: 2) {
+                    ForEach(Provider.allCases) { item in
+                        Button(item.rawValue) { provider = item }
+                            .buttonStyle(PanelButtonStyle(selected: provider == item))
+                            .accessibilityAddTraits(provider == item ? .isSelected : [])
+                    }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 142)
+                .padding(2)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("菜单栏显示")
             }
             ForEach(Provider.allCases) { item in
                 QuotaCard(provider: item, quota: data[item], now: now)
@@ -36,10 +41,25 @@ struct QuotaPanel: View {
                 Spacer()
                 Button("退出", action: quit)
             }
-            .controlSize(.small)
+            .buttonStyle(PanelButtonStyle())
         }
         .padding(16)
         .frame(width: 360)
+    }
+}
+
+private struct PanelButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    var selected = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(selected ? .semibold : .regular))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(selected ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.04),
+                        in: RoundedRectangle(cornerRadius: 6))
+            .opacity(enabled ? (configuration.isPressed ? 0.65 : 1) : 0.45)
     }
 }
 
@@ -72,7 +92,7 @@ private struct QuotaCard: View {
                 if let session = quota.session { quotaRow(session) }
                 if let weekly = quota.weekly { quotaRow(weekly) }
                 if let at = quota.observedAt {
-                    Text("本地记录 · \(at.formatted(.dateTime.month().day().hour().minute()))")
+                    Text("本地记录 · \(clockTime(at))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -104,9 +124,13 @@ private struct QuotaCard: View {
             if !active {
                 Text("等待重置后的新记录").font(.caption).foregroundStyle(.secondary)
             } else if let reset = window.resetAt {
-                Text("重置 · \(reset.formatted(.dateTime.month().day().hour().minute()))")
+                Text("重置 · \(clockTime(reset))")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func clockTime(_ date: Date) -> String {
+        date.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "zh_CN")))
     }
 }
