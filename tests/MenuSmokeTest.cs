@@ -27,7 +27,7 @@ public static class MenuSmokeTest
             menu.Items.Add("打开额度面板"); menu.Items.Add("刷新本地记录");
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("托盘额度来源", null, new ToolStripMenuItem("Codex"), new ToolStripMenuItem("Claude")));
-            menu.Items.Add(new ToolStripMenuItem("托盘显示窗口", null, new ToolStripMenuItem("优先显示 5 小时"), new ToolStripMenuItem("优先显示每周")));
+            menu.Items.Add(new ToolStripMenuItem("托盘图标显示窗口", null, new ToolStripMenuItem("优先显示 5 小时"), new ToolStripMenuItem("优先显示每周")));
             menu.Items.Add("任务栏显示额度标签");
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Usage Lite " + Application.ProductVersion.Split('+')[0] + " · 本地读取") { Enabled = false }); menu.Items.Add("退出");

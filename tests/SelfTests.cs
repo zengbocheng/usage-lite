@@ -102,7 +102,88 @@ public static class SelfTests
             var result = new CodexTokenReader(root).Read(DateTimeOffset.Parse("2026-11-02T08:00:00Z"), TimeZoneInfo.Utc);
             Check(result.Total(result.Today) == 43, "legacy replay, estimate or reset was miscounted");
         });
-        Test("Missing local directories return empty snapshots", () => { var p = Case("missing"); Check(new CodexReader(p).Read(now).Session is null, "Codex missing"); Check(new ClaudeReader(p, p, p).Read(now).Weekly is null, "Claude missing"); });
+        Test("Claude tokens count four counters once across streamed and copied subagent logs", () =>
+        {
+            string root = Case("claude-tokens");
+            string folder = Path.Combine(root, "session", "subagents"); Directory.CreateDirectory(folder);
+            string Row(string id, int output) => JsonSerializer.Serialize(new
+            {
+                type = "assistant", timestamp = "2026-11-02T07:00:00Z", cwd = @"D:\RSI-VLA", requestId = "request-" + id,
+                message = new { id, usage = new { input_tokens = 2, output_tokens = output, cache_creation_input_tokens = 7,
+                    cache_read_input_tokens = 100, cache_creation = new { ephemeral_1h_input_tokens = 7 } } }
+            }) + "\n";
+            string first = Path.Combine(root, "session.jsonl");
+            File.WriteAllText(first, Row("one", 1) + Row("one", 5));
+            File.WriteAllText(Path.Combine(folder, "copy.jsonl"), Row("one", 1) + Row("two", 3));
+            var before = SHA256.HashData(File.ReadAllBytes(first));
+            var reader = new ClaudeTokenReader([root]);
+            var result = reader.Read(DateTimeOffset.Parse("2026-11-02T08:00:00Z"), TimeZoneInfo.Utc);
+            Check(result.Total(result.Today) == 226 && result.Projects(result.Today, 1).Single().Name == "RSI-VLA", "duplicate or cache-detail double count");
+            Check(reader.Read(DateTimeOffset.Parse("2026-11-02T08:00:00Z")).Total(result.Today) == 226, "unchanged refresh repeated usage");
+            Check(before.AsSpan().SequenceEqual(SHA256.HashData(File.ReadAllBytes(first))), "source log modified");
+        });
+        Test("Claude tokens use local midnight and natural weeks, with unknown projects and future filtering", () =>
+        {
+            string root = Case("claude-token-days");
+            string Row(string id, string timestamp, string? cwd) => JsonSerializer.Serialize(new
+            {
+                type = "assistant", timestamp, cwd, message = new { id, usage = new { output_tokens = 10 } }
+            });
+            File.WriteAllLines(Path.Combine(root, "a.jsonl"), [Row("a", "2026-11-02T06:59:59Z", "/home/user/Alpha"),
+                Row("b", "2026-11-02T07:00:00Z", null), Row("c", "2026-11-02T10:00:00Z", "/home/user/Beta")]);
+            var zone = TimeZoneInfo.CreateCustomTimeZone("Claude test", TimeSpan.FromHours(-7), "Test", "Test");
+            var result = new ClaudeTokenReader([root]).Read(DateTimeOffset.Parse("2026-11-02T08:00:00Z"), zone);
+            Check(result.Today == new DateOnly(2026, 11, 2) && result.Total(result.Today) == 10 && result.Total(result.Today.AddDays(-1)) == 10, "local day or future record incorrect");
+            Check(TokenUsage.WeekStart(result.Today) == result.Today && result.Projects(result.Today, 7).Single().Name == "未归类", "weekly or unknown project incorrect");
+        });
+        Test("Claude append handles a large line, incomplete tail, streamed updates and truncation", () =>
+        {
+            string root = Case("claude-token-append"); string file = Path.Combine(root, "a.jsonl");
+            string Row(string id, int output, string content = "") => JsonSerializer.Serialize(new
+            {
+                type = "assistant", timestamp = "2026-11-02T07:00:00Z", cwd = @"D:\Alpha",
+                message = new { id, content, usage = new { output_tokens = output } }
+            }) + "\n";
+            File.WriteAllText(file, Row("a", 10, new string('x', 300_000)));
+            var reader = new ClaudeTokenReader([root]); var at = DateTimeOffset.Parse("2026-11-02T08:00:00Z");
+            Check(reader.Read(at).Total(DateOnly.FromDateTime(at.LocalDateTime)) == 10, "line spanning read buffers missed");
+            string next = Row("a", 15) + Row("b", 20);
+            File.AppendAllText(file, next[..^1]);
+            Check(reader.Read(at).Total(DateOnly.FromDateTime(at.LocalDateTime)) == 15, "stream update or incomplete line wrong");
+            File.AppendAllText(file, "\n");
+            Check(reader.Read(at).Total(DateOnly.FromDateTime(at.LocalDateTime)) == 35, "completed tail missed");
+            File.WriteAllText(file, Row("c", 3));
+            Check(reader.Read(at).Total(DateOnly.FromDateTime(at.LocalDateTime)) == 3, "truncated source retained old counters");
+            File.Delete(file);
+            Check(reader.Read(at).Total(DateOnly.FromDateTime(at.LocalDateTime)) == 0, "deleted source retained counters");
+        });
+        Test("Claude missing IDs stay distinct, advisor tokens count once and invalid counters are ignored", () =>
+        {
+            string root = Case("claude-token-advisor");
+            var rows = new[]
+            {
+                "{\"type\":\"assistant\",\"timestamp\":\"2026-11-02T07:00:00Z\",\"message\":{\"usage\":{\"output_tokens\":2}}}",
+                "{\"type\":\"assistant\",\"timestamp\":\"2026-11-02T07:00:00Z\",\"message\":{\"usage\":{\"output_tokens\":3}}}",
+                "{\"type\":\"assistant\",\"timestamp\":\"2026-11-02T07:00:00Z\",\"message\":{\"id\":\"a\",\"usage\":{\"output_tokens\":4,\"iterations\":[{\"type\":\"advisor_message\",\"input_tokens\":5,\"output_tokens\":6}]}}}",
+                "{\"type\":\"assistant\",\"timestamp\":\"2026-11-02T07:00:00Z\",\"message\":{\"id\":\"bad\",\"usage\":{\"input_tokens\":-1,\"output_tokens\":999}}}",
+                "{\"type\":\"user\",\"timestamp\":\"2026-11-02T07:00:00Z\",\"message\":{\"usage\":{\"output_tokens\":999}}}"
+            };
+            File.WriteAllLines(Path.Combine(root, "a.jsonl"), rows.Concat([rows[2]]));
+            var result = new ClaudeTokenReader([root]).Read(DateTimeOffset.Parse("2026-11-02T08:00:00Z"), TimeZoneInfo.Utc);
+            Check(result.Total(result.Today) == 20, "anonymous entries lost, advisor doubled or invalid entry accepted");
+        });
+        Test("Claude project subdirectories use their repository root and malformed lines report partial data", () =>
+        {
+            string root = Case("claude-token-project");
+            string repo = Path.Combine(root, "RSI-VLA"); Directory.CreateDirectory(Path.Combine(repo, ".git"));
+            string child = Path.Combine(repo, "src"); Directory.CreateDirectory(child);
+            var row = new { type = "assistant", timestamp = "2026-11-02T07:00:00Z", cwd = child,
+                message = new { id = "one", usage = new { input_tokens = 2 } } };
+            File.WriteAllText(Path.Combine(root, "a.jsonl"), "bad json\n" + JsonSerializer.Serialize(row) + "\n");
+            var result = new ClaudeTokenReader([root]).Read(DateTimeOffset.Parse("2026-11-02T08:00:00Z"), TimeZoneInfo.Utc);
+            Check(result.Partial && result.Total(result.Today) == 2 && result.Projects(result.Today, 1).Single().Name == "RSI-VLA", "project root or partial flag incorrect");
+        });
+        Test("Missing local directories return empty snapshots", () => { var p = Case("missing"); Check(new CodexReader(p).Read(now).Session is null, "Codex missing"); Check(new ClaudeReader(p, p, p).Read(now).Weekly is null, "Claude missing"); Check(new ClaudeTokenReader([p]).Read(now).Total(DateOnly.FromDateTime(now.LocalDateTime)) == 0, "Claude tokens missing"); });
         Test("JSONL incomplete tail retains preceding valid quota", () =>
         {
             string p = Case("jsonl"); Directory.CreateDirectory(Path.Combine(p, "sessions"));
@@ -222,13 +303,14 @@ public static class SelfTests
         Test("Taskbar label reserves space beside visible weather at multiple DPI scales", () =>
         {
             foreach (double scale in new[] { 1d, 1.5, 1.75, 2 })
+            foreach (int labelWidth in new[] { 100, 220 })
             {
                 int S(int n) => (int)(n * scale);
                 var bar = new Rectangle(-S(1920), S(1040), S(1920), S(40));
                 var host = new Rectangle(bar.Left + S(150), bar.Top, S(1470), bar.Height);
                 var tray = new Rectangle(bar.Right - S(300), bar.Top, S(300), bar.Height);
                 var weather = new Rectangle(tray.Left - S(160), bar.Top, S(160), bar.Height);
-                var result = TaskbarLabelLayout.Place(bar, host, tray, [weather], new Size(S(100), S(24)), S(4));
+                var result = TaskbarLabelLayout.Place(bar, host, tray, [weather], new Size(S(labelWidth), S(24)), S(4));
                 Check(result is not null && bar.Contains(result.Label) && !result.Label.IntersectsWith(tray) && !result.Label.IntersectsWith(weather) && !result.Label.IntersectsWith(result.TaskList), "label overlaps shell content");
                 Check(result!.TaskList.Left == host.Left && result.TaskList.Width >= 160, "task list displaced or removed");
             }
@@ -245,12 +327,30 @@ public static class SelfTests
             Check(!TaskbarLabelLayout.FullyVisible(new(0, 1078, 1920, 40), monitor), "auto-hidden taskbar shown");
             Check(TaskbarLabelLayout.CoversMonitor(monitor, monitor) && !TaskbarLabelLayout.CoversMonitor(new(-8, -8, 1936, 1056), monitor), "maximized window mistaken for fullscreen");
         });
-        Test("Taskbar label follows provider and preferred quota with expired fallback", () =>
+        Test("Taskbar label shows both windows in session-week order and keeps tray preference independent", () =>
         {
             var q = new QuotaSnapshot("Codex", new(8, now.AddHours(1), 300), new(29, now.AddDays(1), 10080), now, "test");
-            Check(TaskbarLabelLayout.Text(q, false, now) == "Codex: 92%" && TaskbarLabelLayout.Text(q, true, now) == "Codex: 71%", "wrong quota label");
-            Check(TaskbarLabelLayout.Text(q, false, now.AddHours(2)) == "Codex: 71%", "expired session not skipped");
-            Check(TaskbarLabelLayout.Text(QuotaSnapshot.Empty("Claude", "test"), false, now) == "Claude: —", "missing quota invented");
+            Check(TaskbarLabelLayout.Text(q, now) == "Codex: 92% / 71%", "dual label or order wrong");
+            Check(q.Preferred(false, now) == q.Session && q.Preferred(true, now) == q.Weekly, "tray preference overridden");
+            Check(TaskbarLabelLayout.Text(q, now.AddHours(2)) == "Codex: 71%", "expired session not skipped");
+            Check(TaskbarLabelLayout.Text(QuotaSnapshot.Empty("Claude", "test"), now) == "Claude: —", "missing quota invented");
+        });
+        Test("Taskbar label exposes low weekly and exhausted quota beside a high session balance", () =>
+        {
+            var q = new QuotaSnapshot("Claude", new(10, now.AddHours(1), 300), new(95, now.AddDays(1), 10080), now, "test");
+            Check(TaskbarLabelLayout.Text(q, now) == "Claude: 90% / 5%", "weekly bottleneck hidden");
+            var sessionLow = q with { Session = new(99, now.AddHours(1), 300) };
+            Check(TaskbarLabelLayout.Text(sessionLow, now) == "Claude: 1% / 5%", "session bottleneck hidden");
+            var exhausted = q with { Weekly = new(100, now.AddDays(1), 10080) };
+            Check(TaskbarLabelLayout.Text(exhausted, now) == "Claude: 90% / 0%", "exhausted quota treated as missing");
+        });
+        Test("Single-window labels omit the slash and missing or expired windows do not invent availability", () =>
+        {
+            var q = new QuotaSnapshot("Codex", new(40, now.AddHours(1), 300), new(95, now.AddSeconds(-1), 10080), now, "test");
+            Check(TaskbarLabelLayout.Text(q, now) == "Codex: 60%", "expired weekly included");
+            Check(TaskbarLabelLayout.Text(q with { Session = null, Weekly = new(95, null, 10080) }, now) == "Codex: 5%", "valid weekly-only quota missed");
+            Check(TaskbarLabelLayout.Text(q with { Session = null }, now) == "Codex: —", "expired-only quota treated as available");
+            Check(TaskbarLabelLayout.Text(QuotaSnapshot.Empty("Claude", "test"), now) == "Claude: —", "missing quota invented");
         });
         Test("Taskbar label defaults on without overriding an explicit disabled preference", () =>
         {

@@ -30,6 +30,11 @@ internal static class PanelSmokeTest
             [monday.AddDays(2)] = new() { ["D:/Project Alpha"] = 1_700_000, [""] = 230_000 },
             [monday.AddDays(3)] = new() { ["D:/Project Alpha"] = 2_430_000, ["D:/Project Beta"] = 1_040_000, [""] = 70_000 }
         }));
+        form.UpdateClaudeTokens(new TokenUsage(monday.AddDays(3), new()
+        {
+            [monday] = new() { ["D:/RSI-VLA"] = 30_000 },
+            [monday.AddDays(3)] = new() { ["D:/RSI-VLA"] = 1_200_000, ["D:/NSSolver"] = 2_400_000 }
+        }));
         form.Show();
         Application.DoEvents();
         // Exercise the real WinForms DPI message path on this test window only.
@@ -51,16 +56,19 @@ internal static class PanelSmokeTest
             var layout = (TableLayoutPanel)form.Controls[0];
             var cards = layout.Controls.OfType<QuotaCard>().ToArray();
             bool fits = cards.All(card => card.Height >= card.HeightForWidth(card.Width));
-            var link = cards.SelectMany(card => card.Controls.OfType<LinkLabel>()).Single();
+            var links = cards.SelectMany(card => card.Controls.OfType<LinkLabel>()).ToArray();
             // Measure against the simulated window DPI. PreferredSize uses the actual desktop DPI.
             using var measure = new Bitmap(1, 1);
             measure.SetResolution(form.DeviceDpi, form.DeviceDpi);
             using var graphics = Graphics.FromImage(measure);
-            var lineSize = graphics.MeasureString(link.Text, link.Font);
-            bool linkFits = link.Parent!.ClientRectangle.Contains(link.Bounds) &&
-                link.Height >= lineSize.Height && link.Width >= lineSize.Width &&
-                link.Text.StartsWith(((QuotaCard)link.Parent).SourceText) &&
-                link.Text[link.LinkArea.Start..].StartsWith("今日已用");
+            bool linkFits = links.Length == 2 && links.All(link =>
+            {
+                var lineSize = graphics.MeasureString(link.Text, link.Font);
+                return link.Parent!.ClientRectangle.Contains(link.Bounds) &&
+                    link.Height >= lineSize.Height && link.Width >= lineSize.Width &&
+                    link.Text.StartsWith(((QuotaCard)link.Parent).SourceText) &&
+                    link.Text[link.LinkArea.Start..].StartsWith("今日已用");
+            });
             var footer = (TableLayoutPanel)layout.GetControlFromPosition(0, 3)!;
             var refresh = footer.GetControlFromPosition(0, 0)!;
             var hint = footer.GetControlFromPosition(1, 0)!;
@@ -87,7 +95,7 @@ internal static class PanelSmokeTest
             image.Save(Path.Combine(Path.GetDirectoryName(output)!, "panel-reopened.png"));
         }
         var dashboard = (TableLayoutPanel)form.Controls[0];
-        var tokenLink = dashboard.Controls.OfType<QuotaCard>().SelectMany(card => card.Controls.OfType<LinkLabel>()).Single();
+        var tokenLink = dashboard.Controls.OfType<QuotaCard>().First().Controls.OfType<LinkLabel>().Single();
         tokenLink.AccessibilityObject.GetChild(0)!.DoDefaultAction();
         Application.DoEvents();
         var detail = form.Controls.OfType<TokenUsageView>().Single();
@@ -113,6 +121,35 @@ internal static class PanelSmokeTest
         if (!tokenNavigation) failures++;
         results.Add(new { name = "Token details select today, switch day, and browse calendar weeks", passed = tokenNavigation,
             openedToday, dayProjects, weekProjects, previousWeek });
+        var detailHeader = (TableLayoutPanel)detail.GetControlFromPosition(0, 0)!;
+        ((Button)detailHeader.GetControlFromPosition(0, 0)!).PerformClick();
+        var claudeLink = dashboard.Controls.OfType<QuotaCard>().Last().Controls.OfType<LinkLabel>().Single();
+        claudeLink.AccessibilityObject.GetChild(0)!.DoDefaultAction();
+        Application.DoEvents();
+        bool claudeOpened = detail.Visible && detailHeader.GetControlFromPosition(1, 0)!.Text == "Claude Code Token 用量" &&
+            projects.Items.Count == 2 && projects.Items[0].Text == "NSSolver" && projects.Items[0].SubItems[1].Text == "240 万";
+        form.UpdateTokens(new TokenUsage(monday.AddDays(3), new() { [monday.AddDays(3)] = new() { ["D:/CodexOnly"] = 9 } }));
+        bool otherProviderIsolated = projects.Items.Count == 2 && projects.Items[0].Text == "NSSolver";
+        weekTotal.PerformClick();
+        form.UpdateClaudeTokens(new TokenUsage(monday.AddDays(3), new()
+        {
+            [monday] = new() { ["D:/RSI-VLA"] = 30_000 },
+            [monday.AddDays(3)] = new() { ["D:/RSI-VLA"] = 1_400_000, ["D:/NSSolver"] = 2_400_000 }
+        }));
+        bool claudeRefresh = weekTotal.Text.EndsWith("383 万 Token", StringComparison.Ordinal) && projects.Items[1].SubItems[1].Text == "143 万";
+        using (var image = new Bitmap(form.Width, form.Height))
+        {
+            form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size));
+            image.Save(Path.Combine(Path.GetDirectoryName(output)!, "claude-token-usage.png"));
+        }
+        ((Button)detailHeader.GetControlFromPosition(0, 0)!).PerformClick();
+        tokenLink.AccessibilityObject.GetChild(0)!.DoDefaultAction();
+        bool codexRestored = projects.Items.Count == 1 && projects.Items[0].Text == "CodexOnly" &&
+            detailHeader.GetControlFromPosition(1, 0)!.Text == "Codex Token 用量";
+        bool providerSwitching = claudeOpened && otherProviderIsolated && claudeRefresh && codexRestored;
+        if (!providerSwitching) failures++;
+        results.Add(new { name = "Claude token link, provider isolation and active detail refresh", passed = providerSwitching,
+            claudeOpened, otherProviderIsolated, claudeRefresh, codexRestored });
         form.Shutdown();
         File.WriteAllText(output, JsonSerializer.Serialize(new { failed = failures, results }, new JsonSerializerOptions { WriteIndented = true }));
         return failures == 0 ? 0 : 1;

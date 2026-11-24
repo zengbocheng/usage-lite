@@ -114,6 +114,9 @@ internal static class Program
                 form.UpdateData(quotas);
                 var tokens = await Task.Run(service.ReadTokens);
                 if (!form.IsDisposed) form.UpdateTokens(tokens);
+                if (form.IsDisposed) return;
+                var claudeTokens = await Task.Run(service.ReadClaudeTokens);
+                if (!form.IsDisposed) form.UpdateClaudeTokens(claudeTokens);
             }
             finally
             {
@@ -134,6 +137,17 @@ public sealed class QuotaService
     private readonly CodexReader codex = new();
     private readonly ClaudeReader claude = new();
     private readonly CodexTokenReader tokens = new();
+    private readonly ClaudeTokenReader claudeTokens = new();
+
+    public TokenUsage ReadClaudeTokens()
+    {
+        try { return claudeTokens.Read(DateTimeOffset.UtcNow); }
+        catch (Exception ex) when (LocalFiles.IsReadError(ex))
+        {
+            AppLog.Write("claude token read failed: " + ex.GetType().Name);
+            return new(DateOnly.FromDateTime(DateTime.Today), [], partial: true);
+        }
+    }
 
     public TokenUsage ReadTokens()
     {
@@ -192,7 +206,7 @@ public sealed class TrayContext : ApplicationContext
         var providers = new ToolStripMenuItem("托盘额度来源");
         providers.DropDownItems.AddRange([codexItem, claudeItem]);
         menu.Items.Add(providers);
-        var windows = new ToolStripMenuItem("托盘显示窗口");
+        var windows = new ToolStripMenuItem("托盘图标显示窗口");
         windows.DropDownItems.AddRange([sessionItem, weeklyItem]);
         menu.Items.Add(windows);
         menu.Items.Add(labelItem);
@@ -245,6 +259,9 @@ public sealed class TrayContext : ApplicationContext
             data = next; form.UpdateData(next); UpdateTray();
             var tokens = await Task.Run(service.ReadTokens);
             if (!closing) form.UpdateTokens(tokens);
+            if (closing) return;
+            var claudeTokens = await Task.Run(service.ReadClaudeTokens);
+            if (!closing) form.UpdateClaudeTokens(claudeTokens);
         }
         catch (Exception ex) { AppLog.Write("refresh failed " + ex.GetType().Name); }
         finally
@@ -282,12 +299,14 @@ public sealed class TrayContext : ApplicationContext
         }
         string Row(QuotaSnapshot s)
         {
-            var w = s.Preferred(settings.Weekly, now);
-            return s.Provider + ": " + (w is null ? "暂无额度记录" : w.Remaining.ToString("0.#") + "% 剩余 · " + w.Title) + (s.Stale(now) ? "（较早记录）" : "");
+            var windows = new[] { s.Session, s.Weekly }.Where(w => w is not null && !w.Expired(now))
+                .Select(w => w!.Title + " " + w.Remaining.ToString("0.#") + "%");
+            string values = string.Join(" / ", windows);
+            return s.Provider + ": " + (values.Length == 0 ? "暂无额度记录" : values) + (s.Stale(now) ? "（较早记录）" : "");
         }
         string tooltip = Row(data.Codex) + "\n" + Row(data.Claude);
         tray.Text = tooltip.Length > 120 ? tooltip[..120] : tooltip;
-        taskbarLabel?.UpdateQuota(selected, settings.Weekly, now, tooltip);
+        taskbarLabel?.UpdateQuota(selected, now, tooltip);
     }
     protected override void ExitThreadCore()
     {

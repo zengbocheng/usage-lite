@@ -25,6 +25,12 @@ public static class TaskbarLabelLayout
     public static bool CoversMonitor(Rectangle window, Rectangle monitor) =>
         window.Left <= monitor.Left + 1 && window.Top <= monitor.Top + 1 && window.Right >= monitor.Right - 1 && window.Bottom >= monitor.Bottom - 1;
 
-    public static string Text(QuotaSnapshot snapshot, bool weekly, DateTimeOffset now) =>
-        snapshot.Provider + ": " + (snapshot.Preferred(weekly, now) is { } w ? w.Remaining.ToString("0") + "%" : "—");
+    public static string Text(QuotaSnapshot snapshot, DateTimeOffset now)
+    {
+        var windows = new[] { snapshot.Session, snapshot.Weekly }
+            .Where(window => window is not null && !window.Expired(now))
+            .Select(window => window!.Remaining.ToString("0") + "%");
+        string values = string.Join(" / ", windows);
+        return snapshot.Provider + ": " + (values.Length == 0 ? "—" : values);
+    }
 }

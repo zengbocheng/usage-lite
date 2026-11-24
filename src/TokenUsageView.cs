@@ -20,6 +20,8 @@ internal sealed class TokenUsageView : TableLayoutPanel
     private readonly DayButton[] bars = new DayButton[7];
     private readonly ToolTip tooltips = new();
     private TokenUsage? usage;
+    private string provider = "Codex";
+    private readonly Label heading = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Ink };
     private DateOnly week;
     private DateOnly? selectedDay;
     private const string Weekdays = "一二三四五六日";
@@ -48,7 +50,6 @@ internal sealed class TokenUsageView : TableLayoutPanel
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12));
         var back = new RoundedButton { Text = "‹ 返回", AccessibleName = "返回额度面板", Dock = DockStyle.Fill };
         back.Click += (_, _) => BackRequested?.Invoke();
-        var heading = new Label { Text = "Codex Token 用量", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Ink };
         var close = new RoundedButton { Text = "×", AccessibleName = "关闭面板", Dock = DockStyle.Fill };
         close.Click += (_, _) => CloseRequested?.Invoke();
         header.Controls.Add(back, 0, 0);
@@ -91,8 +92,10 @@ internal sealed class TokenUsageView : TableLayoutPanel
         total.Click += (_, _) => SelectDay(null);
     }
 
-    public void Open(TokenUsage? snapshot, DateOnly today)
+    public void Open(TokenUsage? snapshot, DateOnly today, string provider = "Codex")
     {
+        this.provider = provider;
+        heading.Text = provider + " Token 用量";
         usage = snapshot;
         week = TokenUsage.WeekStart(today);
         selectedDay = today;
@@ -168,8 +171,9 @@ internal sealed class TokenUsageView : TableLayoutPanel
         projects.Visible = rows.Count > 0;
         projects.ResizeColumns();
         empty.Visible = rows.Count == 0;
-        empty.Text = usage is null ? "正在读取本地 Codex 会话…" : "这段时间没有本地 Token 记录";
-        note.Text = usage?.Partial == true ? "部分会话暂时无法读取，稍后会重试。" : "本地 Codex 记录 · 按工作目录归类";
+        empty.Text = usage is null ? $"正在读取本地 {provider} 会话…" : "这段时间没有本地 Token 记录";
+        note.Text = usage?.Partial == true ? "部分记录未能读取，统计可能不完整。" :
+            provider == "Claude Code" ? "本地 Claude Code 记录 · 含缓存读写 Token" : "本地 Codex 记录 · 按工作目录归类";
     }
 
     internal static string Compact(long value, bool chart = false)

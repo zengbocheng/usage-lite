@@ -59,9 +59,9 @@ internal sealed class TaskbarQuotaLabel : Form
         menu.Show(this, location);
     }
 
-    public void UpdateQuota(QuotaSnapshot snapshot, bool weekly, DateTimeOffset now, string details)
+    public void UpdateQuota(QuotaSnapshot snapshot, DateTimeOffset now, string details)
     {
-        labelText = TaskbarLabelLayout.Text(snapshot, weekly, now);
+        labelText = TaskbarLabelLayout.Text(snapshot, now);
         stale = snapshot.Stale(now);
         tooltip.SetToolTip(this, details);
         UpdateLayout();
