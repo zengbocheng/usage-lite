@@ -1,0 +1,60 @@
+name: macOS Preview
+
+on:
+  push:
+    paths:
+      - 'macos/**'
+      - 'src/Models.cs'
+      - 'src/QuotaReaders.cs'
+      - 'src/ChromiumCache.cs'
+      - 'UsageLite.csproj'
+      - '.github/workflows/macos-preview.yml'
+  pull_request:
+    paths:
+      - 'macos/**'
+      - 'src/Models.cs'
+      - 'src/QuotaReaders.cs'
+      - 'src/ChromiumCache.cs'
+      - 'UsageLite.csproj'
+      - '.github/workflows/macos-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: macOS (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build the app bundle
+        run: bash macos/build.sh "$RUNNER_TEMP/usage-lite"
+      - name: Test local quota reading and render the UI
+        run: bash macos/test-preview.sh "$RUNNER_TEMP/usage-lite"
+      - name: Upload app ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: usage-lite-macos-${{ matrix.arch }}
+          path: ${{ runner.temp }}/usage-lite/*.zip
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload UI previews
+        if: matrix.arch == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: usage-lite-macos-ui
+          path: ${{ runner.temp }}/usage-lite/ui/*.png
+          if-no-files-found: error

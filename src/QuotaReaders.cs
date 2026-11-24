@@ -146,7 +146,9 @@ public sealed class ClaudeReader
     private readonly string roaming, local, home;
     public ClaudeReader(string? roaming = null, string? local = null, string? home = null)
     {
-        this.roaming = roaming ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        this.roaming = roaming ?? (OperatingSystem.IsMacOS()
+            ? Path.Combine(home ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support")
+            : Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
         this.local = local ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         this.home = home ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }

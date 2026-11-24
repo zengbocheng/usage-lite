@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>usage-lite-reader</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Models.cs" Link="Models.cs" />
+    <Compile Include="../../src/QuotaReaders.cs" Link="QuotaReaders.cs" />
+    <Compile Include="../../src/ChromiumCache.cs" Link="ChromiumCache.cs" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.14" />
+    <PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="2.1.11" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
+  </ItemGroup>
+</Project>
