@@ -41,7 +41,7 @@ struct QuotaData: Decodable {
     subscript(provider: Provider) -> Quota { provider == .codex ? codex : claude }
 
     static func read(fixture: String? = nil) throws -> Self {
-        let executable = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Reader/usage-lite-reader")
+        let executable = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/Reader/usage-lite-reader")
         let process = Process()
         process.executableURL = executable
         if let fixture { process.arguments = ["--fixture-root", fixture] }

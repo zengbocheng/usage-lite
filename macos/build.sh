@@ -14,14 +14,15 @@ version=$(sed -n 's/.*<Version>\([^<]*\)<\/Version>.*/\1/p' UsageLite.csproj)
 
 app="$out/Usage Lite.app"
 contents="$app/Contents"
-reader="$contents/Helpers/Reader"
+reader="$contents/Resources/Reader"
 mkdir -p "$contents/MacOS" "$contents/Resources" "$reader"
 cp macos/Info.plist "$contents/Info.plist"
 for key in CFBundleShortVersionString CFBundleVersion; do
     /usr/libexec/PlistBuddy -c "Set :$key $version" "$contents/Info.plist"
 done
 cp LICENSE THIRD_PARTY_NOTICES.md "$contents/Resources/"
-cp -R licenses "$contents/Resources/licenses"
+mkdir -p "$contents/Resources/licenses"
+cp -R licenses/. "$contents/Resources/licenses/"
 
 dotnet publish macos/Reader/UsageLite.Reader.csproj -c Release -r "$rid" --self-contained true -o "$reader" -p:Version="$version"
 xcrun swiftc -swift-version 5 -parse-as-library -O -target "$arch-apple-macosx14.0" \
